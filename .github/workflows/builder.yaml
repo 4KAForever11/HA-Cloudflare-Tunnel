@@ -120,13 +120,18 @@ jobs:
         run: |
           docker run --rm --entrypoint /usr/local/bin/cloudflared "$IMAGE:$VERSION" --version
           printf '%s\n' '{"tunnel_token":"","log_level":"info","protocol":"auto"}' > "$RUNNER_TEMP/tunnel-options.json"
-          if docker run --rm \
+          status=0
+          docker run --rm \
             --mount "type=bind,source=$RUNNER_TEMP/tunnel-options.json,target=/data/options.json,readonly" \
-            "$IMAGE:$VERSION" > "$RUNNER_TEMP/tunnel-startup.log" 2>&1; then
+            "$IMAGE:$VERSION" > "$RUNNER_TEMP/tunnel-startup.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/tunnel-startup.log"
+          while IFS= read -r line; do
+            echo "::notice title=Container startup::$line"
+          done < "$RUNNER_TEMP/tunnel-startup.log"
+          if [ "$status" -eq 0 ]; then
             echo "An empty token must fail startup"
             exit 1
           fi
-          cat "$RUNNER_TEMP/tunnel-startup.log"
           grep -F 'Tunnel token is required' "$RUNNER_TEMP/tunnel-startup.log"
 
   manifest:
@@ -149,3 +154,4 @@ jobs:
             ${{ needs.init.outputs.version }}
             latest
           skip-existing: ${{ needs.init.outputs.version }}
+
