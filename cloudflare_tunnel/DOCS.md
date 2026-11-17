@@ -2,70 +2,106 @@
 
 ## English
 
-### Create the tunnel
+### Connect the tunnel and origin
 
-In Cloudflare Zero Trust, create or select a remotely-managed tunnel. Open the tunnel's install/run instructions and copy its token. In Home Assistant, paste the token into this add-on's **Configuration > Tunnel token** field, save, and start the add-on. The token is stored as a password option and is not printed by the entrypoint.
+Copy the token for your remotely-managed Cloudflare Tunnel into the add-on Configuration tab. Configure the public hostname in Cloudflare with a service such as `http://<HOME_ASSISTANT_LAN_IP>:8123`. Use the port actually configured on your HA instance. Private HTTP can coexist with public HTTPS; `localhost` inside the add-on refers to the connector container.
 
-### Route a hostname
+A healthy tunnel means the connector reached Cloudflare. It does not prove Home Assistant accepts forwarded requests. Keep Home Assistant authentication enabled. Start the add-on and make an initial hostname request to identify the proxy in HA logs if it is rejected; complete reverse-proxy setup below, then verify the login page.
 
-In the tunnel's **Public Hostnames** page, add the hostname you want to publish and point its service to the private origin. For Home Assistant, an example is `http://<HOME_ASSISTANT_LAN_IP>:8123`. This connector opens outbound connections to Cloudflare; it does not need an inbound port on your router.
+### Home Assistant 2026.8 and later
 
-For Home Assistant to accept forwarded client addresses, configure the HTTP integration's `use_x_forwarded_for: true` and set `trusted_proxies` to the actual source subnet used by the add-on network. Home Assistant logs identify untrusted proxy addresses. Trust only that private subnet, then restart Home Assistant. Do not use `0.0.0.0/0` or `::/0`.
+1. Open **Settings → System → Network → HTTP server → Reverse proxy**.
+2. Enable **Trust X-Forwarded-For**.
+3. Add the connector's observed source IP to **Trusted proxies**, preserving existing entries. Use a verified add-on CIDR only if needed for changing container addresses; CIDRs must use the network address. Do not trust every address.
+4. Save. Home Assistant restarts; reconnect and confirm the settings within **5 minutes**, or they roll back.
 
-Merge this into the existing `http:` section of `/config/configuration.yaml`; do not create a duplicate section. Replace the example proxy IP with the address Home Assistant logs report:
+HTTP YAML is imported once during migration; subsequent `http:` edits are ignored. Verify the UI values, then remove obsolete HTTP YAML following the repair instructions. Do not edit or delete `.storage/http` during normal setup.
+
+### Before Home Assistant 2026.8
+
+For versions that still read HTTP configuration from YAML, merge this into the existing `http:` section. Replace the placeholder with the actual proxy IP before saving:
 
 ```yaml
 http:
   use_x_forwarded_for: true
   trusted_proxies:
-    - 172.30.33.2
+    - "REPLACE_WITH_PROXY_IP_FROM_HA_LOG"
 ```
 
-The address above is an example, not a fixed add-on IP. Use your observed address or a verified add-on subnet. Check configuration and restart Home Assistant. Enable **Start on boot** and **Watchdog** on the add-on page. Keep Home Assistant authentication enabled. A healthy tunnel only proves the connector reached Cloudflare; open your HTTPS hostname to verify origin access.
+Preserve other HTTP settings and trusted proxies. If using `http: !include http.yaml`, edit the included file without another `http:` wrapper. Check configuration and restart **Home Assistant Core**, not just this add-on. This YAML procedure is not the configuration method for migrated installations.
 
-If Home Assistant uses HTTPS on port 8123, select an HTTPS origin with a valid certificate. `localhost` inside this add-on refers to the connector container. Outbound tunnel traffic needs port **7844/UDP** for QUIC or **7844/TCP** for HTTP/2, plus DNS and HTTPS for setup. The connector does not update its binary at runtime; install add-on updates through Supervisor.
+### Diagnose HTTP 400
 
-### Troubleshooting
+Visit the public hostname once and inspect the matching Home Assistant Core log:
 
-- **Token required**: paste the token from the selected remotely-managed tunnel and save the add-on configuration.
-- **Tunnel does not connect**: confirm outbound DNS and HTTPS/QUIC access, verify that the token belongs to the intended tunnel, and inspect add-on logs.
-- **Cloudflare returns 502**: verify that the Public Hostname service URL is reachable from the HAOS host and uses the correct scheme and port.
-- **Home Assistant reports an untrusted proxy**: add only the source subnet shown in Home Assistant logs to `trusted_proxies`.
-- **WebSocket or login issues**: confirm the hostname points directly to Home Assistant and remove conflicting proxy rules while testing.
+- `HTTP integration is not set-up for reverse proxies`: enable forwarded-header trust and add the proxy.
+- `Received X-Forwarded-For header from an untrusted proxy ...`: add the reported proxy address to the active configuration.
 
-To rotate a token that may have been exposed, rotate it in Cloudflare Zero Trust and update the add-on configuration.
+The address must come from a real hostname request. A test request sent directly from another LAN computer reports that computer, not cloudflared. Do not substitute the browser client, Cloudflare edge, or origin LAN address without checking the log. A typical HAOS Supervisor subnet may be `172.30.32.0/23`, but verify your network before using it; do not copy it blindly. Existing loopback entries are not a replacement for the connector's address.
+
+After applying the settings, verify that the public HTTPS hostname opens the HA login page. Do not strip forwarding headers or disable authentication to bypass the check.
+
+### Other failures
+
+- **Token required**: save the token in the add-on Configuration tab.
+- **Tunnel offline**: check the token and outbound DNS, plus port 7844/UDP (QUIC) or 7844/TCP (HTTP/2).
+- **502**: check origin reachability, protocol and port.
+- **403**: inspect Cloudflare Access/WAF policy and the response; it is distinct from HA proxy-trust 400.
+- **WebSocket/login issues**: check hostname routing and conflicting proxy/cache rules.
+
+Enable **Start on boot** and **Watchdog** for the add-on. Install binary updates through Supervisor. Rotate exposed tokens in Cloudflare and update the add-on configuration.
+
+Reference: [Home Assistant HTTP settings and YAML migration](https://www.home-assistant.io/integrations/http/).
 
 ## 简体中文
 
-### 创建 Tunnel
+### 连接隧道与源站
 
-在 Cloudflare Zero Trust 中创建或选择一个远程管理型 Tunnel，打开其安装/运行说明并复制 Token。回到 Home Assistant，将 Token 填入本加载项的 **配置 > Tunnel token**，保存并启动。Token 以密码配置项保存，入口脚本不会将其写入日志。
+将已有远程管理型 Cloudflare Tunnel 的 Token 填入加载项配置页。在 Cloudflare 中配置公开主机名及 Service，例如 `http://<HOME_ASSISTANT_LAN_IP>:8123`。端口须与 HA 实际监听端口一致。内网 HTTP 与公网 HTTPS 可以同时使用；加载项内的 `localhost` 指连接器容器自身。
 
-### 配置域名路由
+Tunnel 健康只代表连接器已连接 Cloudflare，不能证明 HA 接受转发请求。保留 HA 登录认证。先启动加载项并访问一次域名；若被拒绝，从对应 HA 日志取得代理地址，再按下文配置信任，最后验证登录页。
 
-在 Tunnel 的 **Public Hostnames（公开主机名）** 页面添加需要公开的域名，并将 Service 指向内网源站。Home Assistant 示例：`http://<HOME_ASSISTANT_LAN_IP>:8123`。连接器主动向 Cloudflare 建立出站连接，路由器不需要开放入站端口。
+### Home Assistant 2026.8 及以后
 
-若需要 Home Assistant 识别转发后的客户端地址，请在 HTTP 集成中设置 `use_x_forwarded_for: true`，并将 `trusted_proxies` 设置为加载项网络实际使用的来源子网。Home Assistant 日志会显示未受信任代理地址。只信任该内网子网后重启 Home Assistant；不要使用 `0.0.0.0/0` 或 `::/0`。
+1. 打开**设置 → 系统 → 网络 → HTTP 服务器 → 反向代理**。
+2. 启用**信任 X-Forwarded-For**。
+3. 在**信任的代理**中添加连接器实际来源 IP，保留已有条目。若容器地址会变化，可使用经过核实的加载项 CIDR 子网；CIDR 应填写网络地址，不要信任全部地址。
+4. 保存后 HA 会重启。恢复连接后，按提示在 **5 分钟内确认新设置**，否则会回退。
 
-将以下内容合并到 `/config/configuration.yaml` 已有的 `http:` 节中，不要重复创建同名节。将示例代理地址替换为 Home Assistant 日志实际报告的来源地址：
+HTTP YAML 仅在迁移时导入一次，之后继续修改 `http:` 段会被忽略。先核对界面设置，再按修复提示移除过时的 HTTP YAML。正常配置应使用界面，不要直接修改或删除 `.storage/http`。
+
+### Home Assistant 2026.8 之前
+
+仅对仍从 YAML 读取 HTTP 配置的旧版本，将以下内容合并到已有 `http:` 节，并在保存前将占位符替换为实际代理 IP：
 
 ```yaml
 http:
   use_x_forwarded_for: true
   trusted_proxies:
-    - 172.30.33.2
+    - "REPLACE_WITH_PROXY_IP_FROM_HA_LOG"
 ```
 
-此地址仅是示例，不是固定的加载项地址；应使用实际观察到的地址或已确认的加载项子网。检查配置后重启 Home Assistant，在加载项页面启用**开机启动**和**看门狗**。保留 Home Assistant 登录认证。Tunnel 显示健康只证明连接器已连接 Cloudflare，还需打开自己的 HTTPS 域名验证源站可访问。
+保留其他 HTTP 设置和已有代理。如果使用 `http: !include http.yaml`，应修改被引用文件，且不要重复添加 `http:` 包装。检查配置后重启 **Home Assistant Core**，仅重启加载项无效。已经迁移的实例不应继续使用此 YAML 配置方法。
 
-如果 Home Assistant 的 8123 端口使用 HTTPS，请选择 HTTPS 源站并使用有效证书。加载项内的 `localhost` 指连接器容器自身。隧道需要出站 **7844/UDP**（QUIC）或 **7844/TCP**（HTTP/2），以及设置所需的 DNS、HTTPS 连接。运行期间关闭二进制自动更新，通过 Supervisor 安装加载项更新。
+### 排查 HTTP 400
 
-### 故障排查
+通过公开域名访问一次，在 Home Assistant Core 日志中找到对应报错：
 
-- **提示需要 Token**：粘贴所选远程管理型 Tunnel 的 Token，并保存加载项配置。
-- **Tunnel 无法连接**：确认网络允许出站 DNS 及 HTTPS/QUIC，检查 Token 是否属于目标 Tunnel，并查看加载项日志。
-- **Cloudflare 返回 502**：检查 Public Hostname 中的 Service URL 是否能从 HAOS 主机访问，以及协议和端口是否正确。
-- **Home Assistant 提示代理不受信任**：只把 Home Assistant 日志显示的来源子网加入 `trusted_proxies`。
-- **WebSocket 或登录异常**：确认域名直接指向 Home Assistant，排查时先移除冲突的代理规则。
+- `HTTP integration is not set-up for reverse proxies`：启用转发头信任并添加代理地址。
+- `Received X-Forwarded-For header from an untrusted proxy ...`：将日志中的代理地址加入当前生效的配置。
 
-如果 Token 可能已泄露，请在 Cloudflare Zero Trust 轮换 Token，并同步更新加载项配置。
+地址必须来自真实域名请求。其他局域网电脑直发转发头产生的日志会显示那台电脑，而非 cloudflared。不要未经核实就填入浏览器客户端地址、Cloudflare 边缘地址或源站局域网地址。常见 HAOS Supervisor 子网可能是 `172.30.32.0/23`，但必须先确认自己的网络，不能盲目照抄；已有的回环地址也不能替代连接器地址。
+
+配置生效后，通过公网 HTTPS 域名确认 HA 登录页正常显示。不要删除转发头或关闭登录认证来绕过检查。
+
+### 其他问题
+
+- **提示需要 Token**：在加载项配置页填写并保存 Token。
+- **Tunnel 离线**：检查令牌、出站 DNS，以及 7844/UDP（QUIC）或 7844/TCP（HTTP/2）。
+- **502**：检查源站是否可达、协议及端口是否正确。
+- **403**：检查 Cloudflare Access/WAF 策略及响应内容，不能按 HA 代理信任 400 来处理。
+- **WebSocket/登录异常**：检查域名路由及冲突的代理、缓存规则。
+
+在加载项页面启用**开机启动**和**看门狗**，通过 Supervisor 安装二进制更新。令牌泄露后在 Cloudflare 中轮换并更新加载项配置。
+
+参考：[Home Assistant 官方 HTTP 设置及 YAML 迁移说明](https://www.home-assistant.io/integrations/http/)。

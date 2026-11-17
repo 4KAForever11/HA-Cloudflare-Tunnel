@@ -16,14 +16,17 @@ Run a Cloudflare Tunnel connector as a Home Assistant OS add-on. This add-on con
 2. Add this repository: `https://github.com/4KAForever11/HA-Cloudflare-Tunnel`.
 3. Install **Cloudflare Tunnel** from the store.
 4. Open the add-on **Configuration** tab, paste the Tunnel Token into **Tunnel token**, and save.
-5. Start the add-on and check its log for a successful connection.
+5. Start the add-on and confirm the tunnel connection. Visit the hostname once; if it returns 400, obtain the proxy source address from the corresponding HA log.
+6. Configure reverse-proxy trust below, complete the restart and confirmation, and visit the hostname again to verify the login page.
 
 
 ## Cloudflare setup
 
 In Cloudflare Zero Trust, create or select a remotely-managed tunnel, copy its token, and add a **Public Hostname**. For Home Assistant, use an origin service such as `http://<HOME_ASSISTANT_LAN_IP>:8123`. Cloudflare manages the DNS record and sends hostname traffic to that service through the tunnel.
 
-For Home Assistant's reverse proxy handling, configure `use_x_forwarded_for` and `trusted_proxies` for the source subnet shown in Home Assistant's logs. Do not trust all IP ranges. See [Add-on documentation](cloudflare_tunnel/DOCS.md) for setup details and troubleshooting.
+**For HTTP 400, check reverse-proxy trust first.** On **Home Assistant 2026.8+**, use **Settings → System → Network → HTTP server → Reverse proxy**. Enable **Trust X-Forwarded-For** and add the actual proxy address. Save, reconnect, and confirm within **5 minutes** to avoid rollback. YAML HTTP changes are ignored after migration. See [setup and troubleshooting](cloudflare_tunnel/DOCS.md) for details and legacy YAML instructions.
+
+Use the origin's actual protocol and port. Private HTTP and public HTTPS can coexist; a 400 alone is not a reason to switch a working HTTP origin to HTTPS.
 
 ## Options
 

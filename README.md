@@ -17,14 +17,21 @@
 2. 添加本仓库：`https://github.com/4KAForever11/HA-Cloudflare-Tunnel`。
 3. 在商店中安装 **Cloudflare Tunnel**。
 4. 打开加载项的 **配置** 页面，将 Tunnel Token 粘贴到 **Tunnel token** 并保存。
-5. 启动加载项，在日志中确认连接状态。
+5. 启动加载项，确认隧道连接后访问域名一次；如返回 400，从对应 HA 日志取得代理来源地址。
+6. 按下文配置反向代理信任，完成重启和确认，再次访问域名验证登录页。
 
 
 ### Cloudflare 配置
 
 在 Cloudflare Zero Trust 中创建或选择远程管理型 Tunnel，复制 Token，然后添加 **Public Hostname（公开主机名）**。Home Assistant 的源站服务可填写 `http://<HOME_ASSISTANT_LAN_IP>:8123`。DNS 记录和主机名流量由 Cloudflare 按该 Tunnel 配置转发。
 
-Home Assistant 反向代理设置需要配置 `use_x_forwarded_for` 和 `trusted_proxies`，并使用 Home Assistant 日志显示的来源子网。不要信任所有 IP 段。详细步骤和故障排查请查看[加载项文档](cloudflare_tunnel/DOCS.md)。
+**出现 `400: Bad Request` 时，先检查 Home Assistant 的代理信任配置。** Home Assistant **2026.8 及以后**请打开：
+
+**设置 → 系统 → 网络 → HTTP 服务器 → 反向代理**
+
+启用“信任 X-Forwarded-For”，添加实际代理 IP 或已确认的加载项子网。保存会重启 HA；恢复后按提示在 **5 分钟内确认**，否则会回退。HTTP 配置已迁移后，再修改 `configuration.yaml` 的 `http:` 段不会生效。旧版本 YAML 步骤见[完整接入与 400 排查说明](cloudflare_tunnel/DOCS.md)。
+
+Service 使用内网源站实际协议和端口。内网 HTTP 与公网域名 HTTPS 可以同时使用；不要只因为 400 就将正常工作的 HTTP 源站改成 HTTPS。
 
 ### 配置项
 
