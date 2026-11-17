@@ -1,0 +1,10 @@
+configuration:
+  tunnel_token:
+    name: 隧道令牌
+    description: 填写 Cloudflare 远程管理隧道的 Token，不要粘贴整条安装命令。
+  log_level:
+    name: 日志级别
+    description: 正常使用选择 info，debug 日志可能含请求详情，分享前请脱敏。
+  protocol:
+    name: 传输协议
+    description: 默认 auto；网络限制 UDP 时可尝试 http2。

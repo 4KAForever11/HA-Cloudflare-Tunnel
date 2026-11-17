@@ -1,0 +1,19 @@
+name: Cloudflare Tunnel
+slug: cloudflare_tunnel
+description: Connect Home Assistant OS to an existing Cloudflare Tunnel
+version: 1.0.0
+url: https://github.com/4KAForever11/HA-Cloudflare-Tunnel
+arch:
+  - amd64
+  - aarch64
+startup: services
+boot: auto
+init: false
+options:
+  tunnel_token: ""
+  log_level: info
+  protocol: auto
+schema:
+  tunnel_token: password
+  log_level: list(debug|info|warn|error|fatal)
+  protocol: list(auto|quic|http2)

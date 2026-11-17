@@ -1,0 +1,10 @@
+configuration:
+  tunnel_token:
+    name: Tunnel token
+    description: Token copied from the remotely-managed tunnel in Cloudflare Zero Trust.
+  log_level:
+    name: Log level
+    description: Verbosity of cloudflared logs.
+  protocol:
+    name: Transport protocol
+    description: Use automatic selection, or force QUIC or HTTP/2.

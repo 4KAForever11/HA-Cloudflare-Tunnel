@@ -1,0 +1,141 @@
+name: Build and publish add-on
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - cloudflare_tunnel/**
+      - tests/**
+      - .github/workflows/**
+
+env:
+  ARCHITECTURES: '["amd64", "aarch64"]'
+  IMAGE_NAME: ha-cloudflare-tunnel
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep shellcheck
+      - run: python -m pip install PyYAML==6.0.3
+      - run: bash tests/test_addon.sh
+      - run: python tests/validate_repository.py
+      - run: shellcheck -s bash cloudflare_tunnel/run.sh tests/test_addon.sh
+
+  init:
+    needs: test
+    name: Prepare build
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      build_args: ${{ steps.metadata.outputs.build_args }}
+      version: ${{ steps.metadata.outputs.version }}
+      registry: ${{ steps.metadata.outputs.registry }}
+      bases: ${{ steps.metadata.outputs.bases }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: python -m pip install PyYAML==6.0.3
+
+      - name: Read add-on build metadata
+        id: metadata
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import json
+          import yaml
+
+          with open("cloudflare_tunnel/config.yaml", encoding="utf-8") as file:
+              addon = yaml.safe_load(file)
+          with open("cloudflare_tunnel/build.yaml", encoding="utf-8") as file:
+              build = yaml.safe_load(file)
+          version = str(addon["version"])
+          if os.environ["RELEASE_TAG"] and os.environ["RELEASE_TAG"].removeprefix("v") != version:
+              raise SystemExit(f"Release tag must match add-on version {version}")
+          args = [f"{key}={value}" for key, value in build["args"].items()]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={version}\n")
+              output.write(f"bases={json.dumps(build['build_from'])}\n")
+              output.write(f"registry=ghcr.io/{os.environ['GITHUB_REPOSITORY_OWNER'].lower()}\n")
+              output.write("build_args<<BUILD_ARGS\n")
+              output.write("\n".join(args) + "\n")
+              output.write("BUILD_ARGS\n")
+          PY
+
+      - name: Prepare architecture matrix
+        id: matrix
+        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@7412f0023ea9b6e58e8bb5059f1660f51376f49a
+        with:
+          architectures: ${{ env.ARCHITECTURES }}
+          image-name: ${{ env.IMAGE_NAME }}
+          registry-prefix: ${{ steps.metadata.outputs.registry }}
+
+  build:
+    name: Build ${{ matrix.arch }} image
+    needs: init
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.init.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and push image
+        uses: home-assistant/builder/actions/build-image@7412f0023ea9b6e58e8bb5059f1660f51376f49a
+        with:
+          arch: ${{ matrix.arch }}
+          build-args: |
+            BUILD_FROM=${{ fromJSON(needs.init.outputs.bases)[matrix.arch] }}
+            ${{ needs.init.outputs.build_args }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: cloudflare_tunnel
+          image: ${{ matrix.image }}
+          image-tags: |
+            ${{ needs.init.outputs.version }}
+            latest
+          push: ${{ github.event_name == 'release' }}
+          cosign: ${{ github.event_name == 'release' }}
+          load: ${{ github.event_name != 'release' }}
+          skip-existing: ${{ needs.init.outputs.version }}
+          version: ${{ needs.init.outputs.version }}
+
+      - name: Smoke test binary
+        if: github.event_name != 'release'
+        env:
+          IMAGE: ${{ matrix.image }}
+          VERSION: ${{ needs.init.outputs.version }}
+        run: docker run --rm --entrypoint /usr/local/bin/cloudflared "$IMAGE:$VERSION" --version
+
+  manifest:
+    if: github.event_name == 'release'
+    name: Publish multi-architecture manifest
+    needs: [init, build]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - name: Publish manifest
+        uses: home-assistant/builder/actions/publish-multi-arch-manifest@7412f0023ea9b6e58e8bb5059f1660f51376f49a
+        with:
+          architectures: ${{ env.ARCHITECTURES }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          image-name: ${{ env.IMAGE_NAME }}
+          registry-prefix: ${{ needs.init.outputs.registry }}
+          image-tags: |
+            ${{ needs.init.outputs.version }}
+            latest
+          skip-existing: ${{ needs.init.outputs.version }}
