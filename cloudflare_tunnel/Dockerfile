@@ -6,7 +6,7 @@ ARG CLOUDFLARED_VERSION
 ARG CLOUDFLARED_SHA256_AMD64
 ARG CLOUDFLARED_SHA256_AARCH64
 
-RUN apk add --no-cache ca-certificates curl \
+RUN apk add --no-cache ca-certificates curl jq \
     && case "${BUILD_ARCH}" in \
         amd64) asset_arch="amd64"; expected_sha256="${CLOUDFLARED_SHA256_AMD64}" ;; \
         aarch64) asset_arch="arm64"; expected_sha256="${CLOUDFLARED_SHA256_AARCH64}" ;; \

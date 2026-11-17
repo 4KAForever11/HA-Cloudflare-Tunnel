@@ -37,7 +37,7 @@ For Home Assistant's reverse proxy handling, configure `use_x_forwarded_for` and
 
 HAOS builds this add-on from source by default, so installation does not depend on a public GHCR package. The first installation downloads a base image and the cloudflared binary. HAOS needs access to GHCR, GitHub, and Alpine package mirrors.
 
-Local checks (Bash, Python, PyYAML and ripgrep required):
+Local checks (Bash, Python, PyYAML, jq and ripgrep required):
 
 ```bash
 python -m pip install PyYAML==6.0.3

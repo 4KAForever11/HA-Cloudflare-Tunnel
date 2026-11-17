@@ -38,7 +38,7 @@ Home Assistant 反向代理设置需要配置 `use_x_forwarded_for` 和 `trusted
 
 默认在 HAOS 本机从源码构建，不依赖 GHCR 包是否公开。首次安装需要下载基础镜像和 cloudflared 二进制；需要 HAOS 能访问 GHCR、GitHub 和 Alpine 软件源。
 
-本地验证（需要 Bash、Python、PyYAML、ripgrep）：
+本地验证（需要 Bash、Python、PyYAML、jq、ripgrep）：
 
 ```bash
 python -m pip install PyYAML==6.0.3

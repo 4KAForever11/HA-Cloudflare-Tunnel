@@ -46,7 +46,7 @@ The repository is a Home Assistant add-on repository with one add-on directory:
 
 The Docker image is built from Home Assistant's architecture-aware base image. The image installs the pinned `cloudflared` package from the official Cloudflare release archive selected by `BUILD_ARCH`, copies the entrypoint, and starts without requiring network access during container startup.
 
-At runtime, Supervisor writes user configuration to `/data/options.json`. `run.sh` reads it with Bashio, validates the token, maps supported options to explicit `cloudflared` flags, and exports `TUNNEL_TOKEN` so the secret does not appear in the process argument list. The process is started with `cloudflared tunnel --no-autoupdate ... run`; enable the Supervisor Watchdog toggle in the add-on UI to recover unexpected process exits.
+At runtime, Supervisor writes user configuration to `/data/options.json`. `run.sh` reads it directly with jq, validates the token, maps supported options to explicit `cloudflared` flags, and exports `TUNNEL_TOKEN` so the secret does not appear in the process argument list. The process is started with `cloudflared tunnel --no-autoupdate ... run`; enable the Supervisor Watchdog toggle in the add-on UI to recover unexpected process exits.
 
 No host ports, host network, Docker socket, Supervisor API, or privileged capabilities are needed. `cloudflared` establishes outbound tunnel connections and forwards traffic according to the remotely-managed tunnel configuration.
 
@@ -63,7 +63,7 @@ The add-on configuration is intentionally small. The token is stored by Supervis
 ## Runtime Flow
 
 1. Supervisor starts the add-on after Home Assistant services are available.
-2. `run.sh` reads `/data/options.json` through Bashio.
+2. `run.sh` reads `/data/options.json` using jq without calling the Supervisor API.
 3. The script rejects an empty token and exits non-zero with an actionable message.
 4. The script exports `TUNNEL_TOKEN` and starts `cloudflared` with explicit runtime flags.
 5. Cloudflare connects the replica to the already-configured tunnel and applies its remote hostname-to-service routes.
@@ -97,7 +97,7 @@ The test suite is shell-based and does not require Home Assistant or Docker:
 
 - Validate YAML syntax and required keys.
 - Verify the Dockerfile contains the required build arguments and checksum verification.
-- Execute `run.sh` in a stubbed Bashio environment to confirm missing-token failure and flag construction without launching a real tunnel.
+- Execute `run.sh` in real JSON options and a stubbed cloudflared boundary to confirm missing-token failure and flag construction without launching a real tunnel.
 - Run `shellcheck` when available.
 
 Local verification runs Bash entrypoint behavior checks, Python YAML and metadata checks, ShellCheck and actionlint. GitHub Actions builds both images and runs the real binary with `--version`. A live tunnel and HAOS installation still require the deployment environment and user token.

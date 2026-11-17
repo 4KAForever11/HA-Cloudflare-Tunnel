@@ -42,13 +42,6 @@ assert_contains "$RUN_SCRIPT" "--no-autoupdate"
 assert_contains "$RUN_SCRIPT" "exec cloudflared"
 
 cat >"${TEMP_DIR}/bashio.sh" <<'STUB'
-bashio::config() {
-  case "$1" in
-    tunnel_token) printf '%s' "${TEST_TOKEN:-}" ;;
-    log_level) printf '%s' "${TEST_LOG_LEVEL:-info}" ;;
-    protocol) printf '%s' "${TEST_PROTOCOL:-auto}" ;;
-  esac
-}
 bashio::log.error() { printf '%s\n' "$*" >&2; }
 STUB
 
@@ -60,16 +53,23 @@ exit "${TEST_EXIT_CODE:-0}"
 STUB
 chmod +x "${TEMP_DIR}/cloudflared"
 
+write_options() {
+  jq -n --arg token "$1" --arg level "${2:-info}" --arg protocol "${3:-auto}" \
+    '{tunnel_token: $token, log_level: $level, protocol: $protocol}' >"${TEMP_DIR}/options.json"
+}
+export ADDON_OPTIONS_FILE="${TEMP_DIR}/options.json"
+write_options '   '
+
 if BASH_ENV="${TEMP_DIR}/bashio.sh" PATH="${TEMP_DIR}:${PATH}" \
-  TEST_TOKEN='   ' CAPTURE_DIR="${TEMP_DIR}" bash "$RUN_SCRIPT" \
+  CAPTURE_DIR="${TEMP_DIR}" bash "$RUN_SCRIPT" \
   >"${TEMP_DIR}/missing.out" 2>&1; then
   fail "entrypoint accepted an empty token"
 fi
 rg -q 'Tunnel token is required' "${TEMP_DIR}/missing.out" || fail "missing-token error was not actionable"
 
 TEST_SECRET='test-token-that-must-not-enter-argv'
+write_options "$TEST_SECRET" debug quic
 if ! BASH_ENV="${TEMP_DIR}/bashio.sh" PATH="${TEMP_DIR}:${PATH}" \
-  TEST_TOKEN="$TEST_SECRET" TEST_LOG_LEVEL=debug TEST_PROTOCOL=quic \
   CAPTURE_DIR="${TEMP_DIR}" bash "$RUN_SCRIPT" >"${TEMP_DIR}/run.out" 2>&1; then
   fail "entrypoint failed with valid configuration"
 fi
@@ -83,17 +83,29 @@ rg -q --fixed-strings -- '--loglevel' "${TEMP_DIR}/argv" || fail "log level flag
 
 expected=$'tunnel\n--no-autoupdate\n--loglevel\ndebug\n--protocol\nquic\n--metrics\n127.0.0.1:2000\nrun'
 [[ "$(<"${TEMP_DIR}/argv")" == "$expected" ]] || fail "unexpected cloudflared arguments"
-for option in TEST_LOG_LEVEL TEST_PROTOCOL; do
+for option in log_level protocol; do
+  write_options "$TEST_SECRET"
+  jq --arg key "$option" '.[$key] = "invalid"' "$ADDON_OPTIONS_FILE" >"${TEMP_DIR}/invalid.json"
+  cp "${TEMP_DIR}/invalid.json" "$ADDON_OPTIONS_FILE"
   if env BASH_ENV="${TEMP_DIR}/bashio.sh" PATH="${TEMP_DIR}:${PATH}" \
-    TEST_TOKEN="$TEST_SECRET" CAPTURE_DIR="${TEMP_DIR}" "$option=invalid" \
+    CAPTURE_DIR="${TEMP_DIR}" \
     bash "$RUN_SCRIPT" >"${TEMP_DIR}/invalid.out" 2>&1; then
     fail "accepted invalid $option"
   fi
   rg -q 'Unsupported' "${TEMP_DIR}/invalid.out" || fail "wrong validation failure"
 done
+for payload in '{}' '[]' 'not-json' '{"tunnel_token":null,"log_level":"info","protocol":"auto"}'; do
+  printf '%s\n' "$payload" >"$ADDON_OPTIONS_FILE"
+  if BASH_ENV="${TEMP_DIR}/bashio.sh" PATH="${TEMP_DIR}:${PATH}" \
+    CAPTURE_DIR="${TEMP_DIR}" bash "$RUN_SCRIPT" >"${TEMP_DIR}/invalid.out" 2>&1; then
+    fail "accepted malformed options"
+  fi
+  rg -q 'Invalid add-on options' "${TEMP_DIR}/invalid.out" || fail "wrong JSON validation failure"
+done
+write_options "$TEST_SECRET"
 status=0
 BASH_ENV="${TEMP_DIR}/bashio.sh" PATH="${TEMP_DIR}:${PATH}" \
-  TEST_TOKEN="$TEST_SECRET" CAPTURE_DIR="${TEMP_DIR}" TEST_EXIT_CODE=42 \
+  CAPTURE_DIR="${TEMP_DIR}" TEST_EXIT_CODE=42 \
   bash "$RUN_SCRIPT" || status=$?
 [[ "$status" == 42 ]] || fail "cloudflared exit status was swallowed"
 
